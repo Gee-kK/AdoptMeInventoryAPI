@@ -67,7 +67,7 @@ ws.OnMessage:Connect(function(msg)
         ws:Send(HttpService:JSONEncode({
             type = "INVENTORY_DATA",
             username = game.Players.LocalPlayer.Name,
-            payload = extractInventoryData(inventory)
+            payload = inventory
         }))
     end
 end)
