@@ -1,53 +1,73 @@
+local HttpService = game:GetService("HttpService")
+
 local Fsys = require(game.ReplicatedStorage:WaitForChild("Fsys")).load
 local ClientData = Fsys("ClientData")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "0.35"
+local VERSION = "0.4"
+local HANDSHAKE_COMPLETED = false
 
-local results = {}
+local function extractInventoryData(data, results)
+    results = results or {}
 
-local function collectItems(tbl)
-    for _, value in pairs(tbl) do
-        if type(value) == "table" then
-            -- Check if this table looks like an item
-            if value.category ~= nil or value.id ~= nil or value.unique ~= nil then
+    for _, v in pairs(data) do
+        if type(v) == "table" then
+
+            if v.category or v.id or v.unique then
                 table.insert(results, {
-                    category = value.category,
-                    id = value.id,
-                    unique = value.unique
+                    category = v.category,
+                    id = v.id,
+                    unique = v.unique
                 })
             end
-
-            -- Keep searching deeper
-            collectItems(value)
+            extractInventoryData(v, results)
         end
     end
+
+    return results
 end
 
-collectItems(inventory)
+local function getInventoryJSON()
+    local cleaned = extractInventoryData(inventory)
+    return HttpService:JSONEncode(cleaned)
+end
 
--- Simple JSON encoder (array only)
-local function toJSON(tbl)
-    local lines = {"["}
+local ws WebSocket.connect("ws://localhost:8080")
 
-    for i, item in ipairs(tbl) do
-        table.insert(lines, "    {")
-        table.insert(lines, '        "category": "' .. tostring(item.category) .. '",')
-        table.insert(lines, '        "id": "' .. tostring(item.id) .. '",')
-        table.insert(lines, '        "unique": "' .. tostring(item.unique) .. '"')
-        table.insert(lines, "    }" .. (i < #tbl and "," or ""))
+-- inital handshake
+ws:Send(HttpService:JSONEncode({
+    type = "IDENTIFICATION",
+    username = game.Players.LocalPlayer
+}))
+
+ws.OnMessage:Connect(function(msg)
+    local data
+
+    pcall(function()
+        data = HttpService:JSONDecode(msg)
+    end)
+
+    if not data then return end
+
+    -- handle initial handshake
+    if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
+        HANDSHAKE_COMPLETED = true
+        print("Handshake completed with server.")
     end
 
-    table.insert(lines, "]")
-    return table.concat(lines, "\n")
-end
 
-print(toJSON(results))
+    if data.type == "REQUEST_INVENTORY" then
+        ws:Send(HttpService:JSONEncode({
+            type = "INVENTORY_DATA",
+            username = game.Players.LocalPlayer,
+            payload = extractInventoryData(inventory)
+        }))
+    end
+end)
 
-
-game:GetService("StarterGui"):SetCore("SendNotification",{
-	Title = "Adopt Me API",
-	Text = `v{VERSION}`,
-	Icon = ""
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Adopt Me API",
+    Text = "v" .. VERSION,
+    Icon = ""
 })
