@@ -3,35 +3,22 @@ local ClientData = Fsys("ClientData")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "0.25"
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1498126858166997113/Kbe4Z34LK9NiTnaXtkgwOd2vnPt_f0Ykx_-uq5mgFloRThA4eoCYWs_AmAgrU18o9mY6"
+local VERSION = "0.30"
 
-function SendMessage(message)
-    local http = game:GetService("HttpService")
-    local headers = {
-        ["Content-Type"] = "application/json"
-    }
-    local data = {
-        ["content"] = message
-    }
-    local body = http:JSONEncode(data)
-    local response = request({
-        Url = WEBHOOK_URL,
-        Method = "POST",
-        Headers = headers,
-        Body = body
-    })
-    print("Sent")
+local function printDescendants(tbl, indent)
+    indent = indent or ""
+
+    for key, value in pairs(tbl) do
+        if type(value) == "table" then
+            print(indent .. tostring(key) .. " -> (table)")
+            printDescendants(value, indent .. "   ")
+        else
+            print(indent .. tostring(key) .. " -> " .. tostring(value))
+        end
+    end
 end
 
-SendMessage("Hello")
-SendMessage(inventory)
-
-
-
-for _, item in pairs(inventory) do
-    print(item)
-end
+printDescendants(inventory)
 
 
 game:GetService("StarterGui"):SetCore("SendNotification",{
