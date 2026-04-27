@@ -5,7 +5,7 @@ local ClientData = Fsys("ClientData")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "0.4"
+local VERSION = "0.5"
 local HANDSHAKE_COMPLETED = false
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -14,34 +14,52 @@ game:GetService("StarterGui"):SetCore("SendNotification", {
     Icon = ""
 })
 
-local function extractInventoryData(data, results)
-    results = results or {}
-
+local function extractInventoryData(data, categorized)
+    categorized = categorized or {}
     for _, v in pairs(data) do
         if type(v) == "table" then
-
             if v.category or v.id or v.unique then
-                table.insert(results, {
-                    category = v.category,
-                    id = v.id,
-                    unique = v.unique
-                })
+                local cat = tostring(v.category or "unknown")
+                local id  = tostring(v.id       or "unknown")
+
+                if not categorized[cat] then
+                    categorized[cat] = {}
+                end
+
+                if categorized[cat][id] then
+                    categorized[cat][id].amount = categorized[cat][id].amount + 1
+                else
+                    categorized[cat][id] = { item = id, amount = 1, unique = v.unique }
+                end
             end
-            extractInventoryData(v, results)
+            extractInventoryData(v, categorized)
         end
     end
-
-    return results
+    return categorized
 end
 
-local function getInventoryJSON()
-    local cleaned = extractInventoryData(inventory)
-    return HttpService:JSONEncode(cleaned)
+
+local function buildPayload()
+    local categorized = extractInventoryData(inventory)
+    local payload = {}
+
+    for cat, items in pairs(categorized) do
+        local itemList = {}
+        for _, itemData in pairs(items) do
+            table.insert(itemList, itemData)
+        end
+        table.insert(payload, {
+            category = cat,
+            items = itemList
+        })
+    end
+
+    return payload
 end
 
 local ws = WebSocket.connect("wss://websocket-production-fb0a.up.railway.app")
 
--- inital handshake
+
 ws:Send(HttpService:JSONEncode({
     type = "IDENTIFICATION",
     username = game.Players.LocalPlayer.Name
@@ -49,25 +67,21 @@ ws:Send(HttpService:JSONEncode({
 
 ws.OnMessage:Connect(function(msg)
     local data
-
     pcall(function()
         data = HttpService:JSONDecode(msg)
     end)
-
     if not data then return end
 
-    -- handle initial handshake
     if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
         HANDSHAKE_COMPLETED = true
         print("Handshake completed with server.")
     end
 
-
     if data.type == "REQUEST_INVENTORY" then
         ws:Send(HttpService:JSONEncode({
             type = "INVENTORY_DATA",
             username = game.Players.LocalPlayer.Name,
-            payload = inventory
+            payload = buildPayload()
         }))
     end
 end)
