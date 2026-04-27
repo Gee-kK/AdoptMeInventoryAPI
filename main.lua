@@ -3,7 +3,7 @@ local ClientData = Fsys("ClientData")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "0.2"
+local VERSION = "0.25"
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1498126858166997113/Kbe4Z34LK9NiTnaXtkgwOd2vnPt_f0Ykx_-uq5mgFloRThA4eoCYWs_AmAgrU18o9mY6"
 
 function SendMessage(message)
@@ -25,7 +25,7 @@ function SendMessage(message)
 end
 
 SendMessage("Hello")
-SendMessage("Inventory: " .. table.concat(inventory, ", "))
+SendMessage(inventory)
 
 
 
