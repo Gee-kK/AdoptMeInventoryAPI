@@ -33,12 +33,12 @@ local function getInventoryJSON()
     return HttpService:JSONEncode(cleaned)
 end
 
-local ws WebSocket.connect("ws://localhost:8080")
+local ws WebSocket.connect("ws://websocket-production-fb0a.up.railway.app")
 
 -- inital handshake
 ws:Send(HttpService:JSONEncode({
     type = "IDENTIFICATION",
-    username = game.Players.LocalPlayer
+    username = game.Players.LocalPlayer.Name
 }))
 
 ws.OnMessage:Connect(function(msg)
@@ -60,7 +60,7 @@ ws.OnMessage:Connect(function(msg)
     if data.type == "REQUEST_INVENTORY" then
         ws:Send(HttpService:JSONEncode({
             type = "INVENTORY_DATA",
-            username = game.Players.LocalPlayer,
+            username = game.Players.LocalPlayer.Name,
             payload = extractInventoryData(inventory)
         }))
     end
