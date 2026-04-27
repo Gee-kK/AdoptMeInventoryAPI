@@ -33,7 +33,7 @@ local function getInventoryJSON()
     return HttpService:JSONEncode(cleaned)
 end
 
-local ws WebSocket.connect("wss://websocket-production-fb0a.up.railway.app")
+local ws = WebSocket.connect("wss://websocket-production-fb0a.up.railway.app")
 
 -- inital handshake
 ws:Send(HttpService:JSONEncode({
