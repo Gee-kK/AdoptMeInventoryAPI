@@ -8,6 +8,12 @@ local inventory = ClientData.get("inventory")
 local VERSION = "0.4"
 local HANDSHAKE_COMPLETED = false
 
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Adopt Me API",
+    Text = "v" .. VERSION,
+    Icon = ""
+})
+
 local function extractInventoryData(data, results)
     results = results or {}
 
@@ -65,9 +71,3 @@ ws.OnMessage:Connect(function(msg)
         }))
     end
 end)
-
-game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Adopt Me API",
-    Text = "v" .. VERSION,
-    Icon = ""
-})
