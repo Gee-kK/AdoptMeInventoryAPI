@@ -9,7 +9,7 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "1.25"
+local VERSION = "1.27"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
@@ -238,7 +238,11 @@ ws.OnMessage:Connect(function(msg)
 	end
 
 	if data.type == "DELIVERY" then
-        print(data)
+
+        for _, i in data do
+            print(i)
+        end
+
 		task.spawn(function()
             table.insert(deliveryQueue, {
 				player = accountToDeliverTo,
