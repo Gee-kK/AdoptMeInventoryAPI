@@ -12,37 +12,84 @@ local inventory = ClientData.get("inventory")
 local VERSION = "1"
 local HANDSHAKE_COMPLETED = false
 
-local hasDelivery = false
-local playersToDeliver = {}
+local isProcessingDelivery = false
+local deliveryQueue = {}
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Adopt Me API",
-    Text = "v" .. VERSION,
-    Icon = ""
+	Title = "Adopt Me API",
+	Text = "v" .. VERSION,
+	Icon = ""
 })
 
+local function flattenInventory(tbl, index)
+	index = index or {}
+
+	for _, v in pairs(tbl) do
+		if type(v) == "table" then
+			if v.id and v.unique then
+				index[v.id] = index[v.id] or {}
+				table.insert(index[v.id], v.unique)
+			end
+
+			flattenInventory(v, index)
+		end
+	end
+
+	return index
+end
+
+local function takeUnique(index, itemId)
+	local list = index[itemId]
+	if not list or #list == 0 then
+		return nil
+	end
+
+	return table.remove(list)
+end
+
+
+
+
 local function extractInventoryData(data, categorized)
-    categorized = categorized or {}
-    for _, v in pairs(data) do
-        if type(v) == "table" then
-            if v.category or v.id then
-                local cat = tostring(v.category or "unknown")
-                local id  = tostring(v.id       or "unknown")
+	categorized = categorized or {}
+	for _, v in pairs(data) do
+		if type(v) == "table" then
+			if v.category or v.id then
+				local cat = tostring(v.category or "unknown")
+				local id  = tostring(v.id       or "unknown")
 
-                if not categorized[cat] then
-                    categorized[cat] = {}
-                end
+				if not categorized[cat] then
+					categorized[cat] = {}
+				end
 
-                if categorized[cat][id] then
-                    categorized[cat][id].amount = categorized[cat][id].amount + 1
-                else
-                    categorized[cat][id] = { item = id, amount = 1 }
-                end
-            end
-            extractInventoryData(v, categorized)
-        end
-    end
-    return categorized
+				if categorized[cat][id] then
+					categorized[cat][id].amount = categorized[cat][id].amount + 1
+				else
+					categorized[cat][id] = { item = id, amount = 1 }
+				end
+			end
+			extractInventoryData(v, categorized)
+		end
+	end
+	return categorized
+end
+
+local function buildPayload()
+	local categorized = extractInventoryData(inventory)
+	local payload = {}
+
+	for cat, items in pairs(categorized) do
+		local itemList = {}
+		for _, itemData in pairs(items) do
+			table.insert(itemList, itemData)
+		end
+		table.insert(payload, {
+			category = cat,
+			items = itemList
+		})
+	end
+
+	return payload
 end
 
 local function deliverItems(targetPlayer, itemsToDeliver)
@@ -86,13 +133,22 @@ local function deliverItems(targetPlayer, itemsToDeliver)
 
             if itemUid then
                 RouterClient.get("TradeAPI/AddItemToOffer"):FireServer(itemUid)
-                task.wait(0.1)
+                task.wait(0.25)
             else
                 warn("Ran out of uniques for:", itemId)
             end
         end
 
+                task.wait(7)
+
         RouterClient.get("TradeAPI/AcceptNegotiation"):FireServer()
+        
+        if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.NegotiationFrame.Body.MyOffer.Accepted.ImageTransparency ~= 0.3 then
+            repeat
+                task.wait(1)
+                RouterClient.get("TradeAPI/AcceptNegotiation"):FireServer()
+            until game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.NegotiationFrame.Body.MyOffer.Accepted.ImageTransparency == 0.3 or game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible
+        end
 
         if not game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible then
             repeat task.wait(.5)
@@ -103,77 +159,92 @@ local function deliverItems(targetPlayer, itemsToDeliver)
 
         RouterClient.get("TradeAPI/ConfirmTrade"):FireServer()
 
+        if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.MyOffer.Accepted.ImageTransparency ~= 0.3 then
+            repeat
+                task.wait(1)
+                RouterClient.get("TradeAPI/ConfirmTrade"):FireServer()
+            until game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.MyOffer.Accepted.ImageTransparency == 0.3 or game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.Visible == false
+        end
+
         task.wait(2)
     end
 end
 
+local function processDeliveryQueue()
+	if isProcessingDelivery then return end
+	isProcessingDelivery = true
 
-local function buildPayload()
-    local categorized = extractInventoryData(inventory)
-    local payload = {}
+	while #deliveryQueue > 0 do
+		local job = table.remove(deliveryQueue, 1)
 
-    for cat, items in pairs(categorized) do
-        local itemList = {}
-        for _, itemData in pairs(items) do
-            table.insert(itemList, itemData)
-        end
-        table.insert(payload, {
-            category = cat,
-            items = itemList
-        })
-    end
+		local targetPlayer = job.player
+		local order = job.order
 
-    return payload
+		print("Processing delivery for:", targetPlayer.Name)
+
+		deliverItems(targetPlayer, order)
+
+		ws:Send(HttpService:JSONEncode({
+			type = "DELIVERYCOMPLETED",
+			username = game.Players.LocalPlayer.Name,
+			payload = buildPayload()
+		}))
+
+		task.wait(1)
+	end
+
+	isProcessingDelivery = false
 end
+
+
 
 local ws = WebSocket.connect("wss://websocket-production-fb0a.up.railway.app")
 
 
 ws:Send(HttpService:JSONEncode({
-    type = "IDENTIFICATION",
-    username = game.Players.LocalPlayer.Name
+	type = "IDENTIFICATION",
+	username = game.Players.LocalPlayer.Name
 }))
 
 ws.OnMessage:Connect(function(msg)
-    local data
-    pcall(function()
-        data = HttpService:JSONDecode(msg)
-    end)
-    if not data then return end
+	local data
+	pcall(function()
+		data = HttpService:JSONDecode(msg)
+	end)
+	if not data then return end
 
-    if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
-        HANDSHAKE_COMPLETED = true
-        print("Handshake completed with server.")
-    end
+	if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
+		HANDSHAKE_COMPLETED = true
+		print("Handshake completed with server.")
+	end
 
-    if data.type == "REQUEST_INVENTORY" then
-        ws:Send(HttpService:JSONEncode({
-            type = "INVENTORY_DATA",
-            username = game.Players.LocalPlayer.Name,
-            payload = buildPayload()
-        }))
-    end
+	if data.type == "REQUEST_INVENTORY" then
+		ws:Send(HttpService:JSONEncode({
+			type = "INVENTORY_DATA",
+			username = game.Players.LocalPlayer.Name,
+			payload = buildPayload()
+		}))
+	end
+
+	if data.type == "DELIVERY" then
+		task.spawn(function()
+			local accountToDeliverTo = game.Players:FindFirstChild(data.buyer)
+
+			if not accountToDeliverTo then
+				repeat
+					task.wait(2)
+					accountToDeliverTo = game.Players:FindFirstChild(data.buyer)
+				until accountToDeliverTo
+			end
+
+			table.insert(deliveryQueue, {
+				player = accountToDeliverTo,
+				order = data.order
+			})
+
+			print("Queued delivery for:", accountToDeliverTo.Name)
+
+			processDeliveryQueue()
+		end)
+	end
 end)
-
-
--- RunService.RenderStepped:Connect(function()
--- 	if not hasDelivery then return end
-	
--- 	-- has a delivery cheks for player inside of the server
--- 	local deliveryTarget = game.Players[playersToDeliver[1]]
--- 	if not deliveryTarget then return end
-	
--- 	-- check for delivery target character to ensure they are loaded in
-	
--- 	-- trade them
---     game.ReplicatedStorage.API["TradeAPI/SendTradeRequest"]:FireServer(deliveryTarget)
-
--- 	-- subtract the amount 
-	
--- 	-- repeats 17-18 until fully delivered
-	
--- 	-- remove the delivery from the tablee.
-	
-	
-	
--- end)
