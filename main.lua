@@ -9,7 +9,7 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "1"
+local VERSION = "1.1"
 local HANDSHAKE_COMPLETED = false
 
 local isProcessingDelivery = false
@@ -198,8 +198,7 @@ end
 
 
 
-local ws = WebSocket.connect("wss://websocket-production-fb0a.up.railway.app")
-
+local ws = WebSocket.connect("ws://192.241.140.80:8080")
 
 ws:Send(HttpService:JSONEncode({
 	type = "IDENTIFICATION",
