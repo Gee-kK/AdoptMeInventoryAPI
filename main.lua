@@ -9,8 +9,9 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local HANDSHAKE_COMPLETED = false
+local ISCONNECTED = false
 
 local isProcessingDelivery = false
 local deliveryQueue = {}
@@ -214,6 +215,17 @@ ws.OnMessage:Connect(function(msg)
 
 	if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
 		HANDSHAKE_COMPLETED = true
+        ISCONNECTED = true
+
+        task.spawn(function()
+	        while ISCONNECTED do
+		        task.wait(30)
+
+			    ws:Send(HttpService:JSONEncode({
+				    type = "ping"
+			    }))
+	        end
+        end)
 		print("Handshake completed with server.")
 	end
 
@@ -246,4 +258,9 @@ ws.OnMessage:Connect(function(msg)
 			processDeliveryQueue()
 		end)
 	end
+end)
+
+
+ws.OnClose:Connect(function()
+    ISCONNECTED = false
 end)
