@@ -9,7 +9,7 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "1.32"
+local VERSION = "1.35"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
@@ -178,10 +178,7 @@ local function processDeliveryQueue()
 	while #deliveryQueue > 0 do
 		local job = deliveryQueue[1]
         
-        print(job)
-        for _, c in job do
-            print(c)
-        end
+        
 
 
 		local targetPlayer = job.player
