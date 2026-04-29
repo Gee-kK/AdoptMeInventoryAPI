@@ -9,7 +9,7 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "1.27"
+local VERSION = "1.3"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
@@ -176,7 +176,8 @@ local function processDeliveryQueue()
 	isProcessingDelivery = true
 
 	while #deliveryQueue > 0 do
-		local job = table.remove(deliveryQueue, 1)
+		local job = deliveryQueue[1]
+        table.remove(deliveryQueue, 1)
 
 		local targetPlayer = job.player
 		local order = job.order
@@ -238,10 +239,6 @@ ws.OnMessage:Connect(function(msg)
 	end
 
 	if data.type == "DELIVERY" then
-
-        for _, i in data do
-            print(i)
-        end
 
 		task.spawn(function()
             table.insert(deliveryQueue, {
