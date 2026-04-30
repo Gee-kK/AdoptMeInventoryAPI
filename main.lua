@@ -201,7 +201,7 @@ end
 
 
 
-local ws = WebSocket.connect("ws://192.241.140.80:8080")
+local ws = WebSocket.connect("wss://goatedwebsocket.duckdns.org/ws/")
 
 ws:Send(HttpService:JSONEncode({
 	type = "IDENTIFICATION",
