@@ -176,7 +176,7 @@ local function processDeliveryQueue()
     isProcessingDelivery = true
 
     while #deliveryQueue > 0 do
-        local job = deliveryQueue[1]
+        local job = table.remove(deliveryQueue, 1)
 
         local targetPlayer = game.Players:FindFirstChild(job.player)
         local order = job.order
@@ -191,7 +191,6 @@ local function processDeliveryQueue()
             payload = buildPayload()
         }))
 
-        table.remove(deliveryQueue, 1)
         task.wait(1)
     end
 
