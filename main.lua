@@ -9,7 +9,7 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "1.35"
+local VERSION = "TEST"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
@@ -101,12 +101,12 @@ local function deliverItems(targetPlayer, itemsToDeliver)
     local allItemsFlattened = {}
 
     for _, entry in ipairs(itemsToDeliver) do
-        if #(inventoryIndex[entry.id] or {}) < entry.amount then
-            warn("Not enough items for:", entry.id)
+        if #(inventoryIndex[entry.name] or {}) < entry.amount then
+            warn("Not enough items for:", entry.inamed)
         end
 
         for i = 1, entry.amount do
-            table.insert(allItemsFlattened, entry.id)
+            table.insert(allItemsFlattened, entry.name)
         end
     end
 
@@ -172,33 +172,30 @@ local function deliverItems(targetPlayer, itemsToDeliver)
 end
 
 local function processDeliveryQueue()
-	if isProcessingDelivery then return end
-	isProcessingDelivery = true
+    if isProcessingDelivery then return end
+    isProcessingDelivery = true
 
-	while #deliveryQueue > 0 do
-		local job = deliveryQueue[1]
-        
-        
+    while #deliveryQueue > 0 do
+        local job = deliveryQueue[1]
 
+        local targetPlayer = game.Players:FindFirstChild(job.player)
+        local order = job.order
 
-		local targetPlayer = job.player
-		local order = job.order
+        print("Processing delivery for:", targetPlayer.Name)
 
-		print("Processing delivery for:", targetPlayer.Name)
+        deliverItems(targetPlayer, order)
 
-		deliverItems(targetPlayer, order)
+        ws:Send(HttpService:JSONEncode({
+            type = "DELIVERYCOMPLETED",
+            username = game.Players.LocalPlayer.Name,
+            payload = buildPayload()
+        }))
 
-		ws:Send(HttpService:JSONEncode({
-			type = "DELIVERYCOMPLETED",
-			username = game.Players.LocalPlayer.Name,
-			payload = buildPayload()
-		}))
+        table.remove(deliveryQueue, 1)
+        task.wait(1)
+    end
 
-		task.wait(1)
-	end
-
-	isProcessingDelivery = false
-    table.remove(deliveryQueue, 1)
+    isProcessingDelivery = false
 end
 
 
@@ -245,7 +242,7 @@ ws.OnMessage:Connect(function(msg)
 
 		task.spawn(function()
             table.insert(deliveryQueue, {
-				player = accountToDeliverTo,
+				player = data.buyer,
 				order = data.order
 			})
 
@@ -263,7 +260,12 @@ ws.OnMessage:Connect(function(msg)
 
 			print("Queued delivery for:", accountToDeliverTo.Name)
 
-			processDeliveryQueue()
+			local success, result = pcall(processDeliveryQueue)
+
+            --if not success then
+            --    print("Error running processDeliveryQueue:", result)
+            --    ws:Close()
+            --end
 		end)
 	end
 end)
