@@ -13,6 +13,8 @@ local VERSION = "TEST"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
+local ws = WebSocket.connect("wss://goatedwebsocket.duckdns.org/ws/")
+
 local isProcessingDelivery = false
 local deliveryQueue = {}
 
@@ -200,8 +202,6 @@ local function processDeliveryQueue()
 end
 
 
-
-local ws = WebSocket.connect("wss://goatedwebsocket.duckdns.org/ws/")
 
 ws:Send(HttpService:JSONEncode({
 	type = "IDENTIFICATION",
