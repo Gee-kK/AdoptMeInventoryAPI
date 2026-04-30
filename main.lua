@@ -102,7 +102,7 @@ local function deliverItems(targetPlayer, itemsToDeliver)
 
     for _, entry in ipairs(itemsToDeliver) do
         if #(inventoryIndex[entry.name] or {}) < entry.amount then
-            warn("Not enough items for:", entry.inamed)
+            warn("Not enough items for:", entry.named)
         end
 
         for i = 1, entry.amount do
@@ -191,6 +191,8 @@ local function processDeliveryQueue()
             payload = buildPayload()
         }))
 
+
+
         task.wait(1)
     end
 
@@ -216,16 +218,6 @@ ws.OnMessage:Connect(function(msg)
 	if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
 		HANDSHAKE_COMPLETED = true
         ISCONNECTED = true
-
-        task.spawn(function()
-	        while ISCONNECTED do
-		        task.wait(30)
-
-			    ws:Send(HttpService:JSONEncode({
-				    type = "ping"
-			    }))
-	        end
-        end)
 		print("Handshake completed with server.")
 	end
 
@@ -259,7 +251,7 @@ ws.OnMessage:Connect(function(msg)
 
 			print("Queued delivery for:", accountToDeliverTo.Name)
 
-			local success, result = pcall(processDeliveryQueue)
+			processDeliveryQueue()
 
             --if not success then
             --    print("Error running processDeliveryQueue:", result)
