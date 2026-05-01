@@ -55,7 +55,17 @@ local INVENTORY_ID_TO_IGNORE = {
     ["stickers_2024_fire_emote"] = true,
     ["pride_2024_demi_flag_misc"] = true,
     ["stickers_2024_cloud_2_environment"] = true,
-    ["stickers_2024_100_emote"] = true
+    ["stickers_2024_100_emote"] = true,
+	["trade_license"] = true,
+	["ice_skates"] = true,
+	["squeaky_bone_default"] = true,
+	["stroller-default"] = true,
+	["sandwich-default"] = true,
+	["beach_2024_mahi_spinning_rod_temporary"] = true,
+	["ice_dimension_2025_ice_soup_bait"] = true,
+	["blue_cap"] = true,
+	["cowbell"] = true,
+	["white_bowtie"] = true
 }
 
 local VERSION = "1.1"
