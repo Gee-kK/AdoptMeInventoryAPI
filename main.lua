@@ -1,7 +1,7 @@
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ScreenGui = game:GetService("Players")
-
+local VirtualUser = game:GetService('VirtualUser')
 
 local Fsys = require(game.ReplicatedStorage:WaitForChild("Fsys")).load
 local ClientData = Fsys("ClientData")
@@ -9,7 +9,7 @@ local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
 
-local VERSION = "TEST"
+local VERSION = "1"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
@@ -229,6 +229,11 @@ ws.OnMessage:Connect(function(msg)
 		HANDSHAKE_COMPLETED = true
         ISCONNECTED = true
 		print("Handshake completed with server.")
+ 
+		game:GetService('Players').LocalPlayer.Idled:Connect(function()
+    		VirtualUser:CaptureController()
+    		VirtualUser:ClickButton2(Vector2.new())
+		end)
 	end
 
 	if data.type == "REQUEST_INVENTORY" then
