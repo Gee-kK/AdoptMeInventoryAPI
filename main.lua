@@ -127,7 +127,9 @@ local function deliverItems(targetPlayer, itemsToDeliver)
         RouterClient.get("TradeAPI/SendTradeRequest"):FireServer(targetPlayer)
 
         if not game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.Visible then
-            repeat task.wait(.5)
+            repeat
+				task.wait(2)
+				RouterClient.get("TradeAPI/SendTradeRequest"):FireServer(targetPlayer)
             until game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.Visible
         end
 
@@ -182,6 +184,14 @@ local function processDeliveryQueue()
 
         local targetPlayer = game.Players:FindFirstChild(job.player)
         local order = job.order
+
+		if not targetPlayer then
+			print("NO TARGET PLAYER")
+			repeat
+				task.wait(1)
+				targetPlayer = game.Players:FindFirstChild(job.player)
+			until targetPlayer
+		end
 
         print("Processing delivery for:", targetPlayer.Name)
 
