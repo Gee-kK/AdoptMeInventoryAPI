@@ -137,7 +137,7 @@ local function extractInventoryData(data, categorized)
 end
 
 local function buildPayload()
-	local categorized = extractInventoryData(inventory)
+	local categorized = extractInventoryData(ClientData.get("inventory"))
 	local payload = {}
 
 	for cat, items in pairs(categorized) do
@@ -255,12 +255,6 @@ local function processDeliveryQueue()
         print("Processing delivery for:", targetPlayer.Name)
 
         deliverItems(targetPlayer, order)
-
-		ws:Send(HttpService:JSONEncode({
-			type = "INVENTORY_DATA",
-			username = game.Players.LocalPlayer.Name,
-			payload = buildPayload()
-		}))
 
         ws:Send(HttpService:JSONEncode({
             type = "DELIVERYCOMPLETED",
