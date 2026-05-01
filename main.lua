@@ -8,8 +8,57 @@ local ClientData = Fsys("ClientData")
 local RouterClient = Fsys("RouterClient")
 
 local inventory = ClientData.get("inventory")
+local INVENTORY_ID_TO_IGNORE = {
+    ["stickers_2024_ham_and_pineapple_pizza_misc"] = true,
+    ["stickers_2024_cloud_1_environment"] = true,
+    ["pride_2024_gender_fluid_flag_misc"] = true,
+    ["stickers_2024_raccoon_pet"] = true,
+    ["stickers_2024_tree_2_environment"] = true,
+    ["pride_2024_omnisex_flag_misc"] = true
+    ["pride_2024_gender_queer_flag_misc"] = true,
+    ["stickers_2024_spiral_emote"] = true,
+    ["stickers_2024_laugh_cry_emote"] = true,
+    ["stickers_2024_smile_emote"] = true,
+    ["stickers_2024_eyes_emote"] = true,
+    ["pride_2024_gay_man_flag_misc"] = true,
+    ["stickers_2024_mushroom_pizza_misc"] = true,
+    ["stickers_2024_cool_emote"] = true,
+    ["pride_2024_agender_flag_misc"] = true,
+    ["pride_2024_transgender_flag_misc"] = true,
+    ["stickers_2024_plain_cheese_pizza_misc"] = true,
+    ["pride_2024_progress_pride_flag_misc"] = true,
+    ["stickers_2024_pepperoni_pizza_misc"] = true,
+    ["stickers_2024_grey_cat_pet"] = true,
+    ["pride_2024_bi_flag_misc"] = true,
+    ["stickers_2024_bucks_misc"] = true,
+    ["stickers_2024_rose_environment"] = true,
+    ["stickers_2024_question_mark_emote"] = true,
+    ["stickers_2024_tree_1_environment"] = true,
+    ["pride_2024_aromantic_flag_misc"] = true,
+    ["stickers_2024_angry_emote"] = true,
+    ["pride_2024_lesbian_flag_misc"] = true,
+    ["pride_2024_pan_flag_misc"] = true,
+    ["stickers_2024_sweat_emote"] = true,
+    ["pride_2024_enby_flag_misc"] = true,
+    ["stickers_2024_heart_emote"] = true,
+    ["stickers_2024_exclamation_emote"] = true,
+    ["stickers_2024_confetti_emote"] = true,
+    ["stickers_2024_surprised_emote"] = true,
+    ["stickers_2024_question_emote"] = true,
+    ["stickers_2024_star_emote"] = true,
+    ["stickers_2024_grass_platform_environment"] = true,
+    ["pride_2024_ace_flag_misc"] = true,
+    ["stickers_2024_mouse_pet"] = true,
+    ["stickers_2024_zzz_emote"] = true,
+    ["pride_2024_intersex_flag_misc"] = true,
+    ["stickers_2024_tree_3_environment"] = true,
+    ["stickers_2024_fire_emote"] = true,
+    ["pride_2024_demi_flag_misc"] = true,
+    ["stickers_2024_cloud_2_environment"] = true,
+    ["stickers_2024_100_emote"] = true
+}
 
-local VERSION = "1"
+local VERSION = "1.1"
 local HANDSHAKE_COMPLETED = false
 local ISCONNECTED = false
 
@@ -57,7 +106,7 @@ local function extractInventoryData(data, categorized)
 	categorized = categorized or {}
 	for _, v in pairs(data) do
 		if type(v) == "table" then
-			if v.category or v.id then
+			if (v.category or v.id) and not INVENTORY_ID_TO_IGNORE[v.id] then
 				local cat = tostring(v.category or "unknown")
 				local id  = tostring(v.id       or "unknown")
 
@@ -197,6 +246,12 @@ local function processDeliveryQueue()
 
         deliverItems(targetPlayer, order)
 
+		ws:Send(HttpService:JSONEncode({
+			type = "INVENTORY_DATA",
+			username = game.Players.LocalPlayer.Name,
+			payload = buildPayload()
+		}))
+
         ws:Send(HttpService:JSONEncode({
             type = "DELIVERYCOMPLETED",
             username = game.Players.LocalPlayer.Name,
@@ -237,6 +292,7 @@ ws.OnMessage:Connect(function(msg)
 	end
 
 	if data.type == "REQUEST_INVENTORY" then
+		print("Server requested inventory. Sending...")
 		ws:Send(HttpService:JSONEncode({
 			type = "INVENTORY_DATA",
 			username = game.Players.LocalPlayer.Name,
