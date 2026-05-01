@@ -65,7 +65,8 @@ local INVENTORY_ID_TO_IGNORE = {
 	["ice_dimension_2025_ice_soup_bait"] = true,
 	["blue_cap"] = true,
 	["cowbell"] = true,
-	["white_bowtie"] = true
+	["white_bowtie"] = true,
+	["practice_dog"] = true
 }
 
 local VERSION = "1.1"
