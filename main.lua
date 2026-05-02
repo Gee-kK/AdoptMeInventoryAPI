@@ -78,40 +78,36 @@ local ws = WebSocket.connect("wss://goatedwebsocket.duckdns.org/ws/")
 local isProcessingDelivery = false
 local deliveryQueue = {}
 
+
+local currentOrderId      = nil
+local cancelledOrders     = {}
+
 game:GetService("StarterGui"):SetCore("SendNotification", {
 	Title = "Adopt Me API",
 	Text = "v" .. VERSION,
 	Icon = ""
 })
 
+
 local function flattenInventory(tbl, index)
 	index = index or {}
-
 	for _, v in pairs(tbl) do
 		if type(v) == "table" then
 			if v.id and v.unique then
 				index[v.id] = index[v.id] or {}
 				table.insert(index[v.id], v.unique)
 			end
-
 			flattenInventory(v, index)
 		end
 	end
-
 	return index
 end
 
 local function takeUnique(index, itemId)
 	local list = index[itemId]
-	if not list or #list == 0 then
-		return nil
-	end
-
+	if not list or #list == 0 then return nil end
 	return table.remove(list)
 end
-
-
-
 
 local function extractInventoryData(data, categorized)
 	categorized = categorized or {}
@@ -120,11 +116,7 @@ local function extractInventoryData(data, categorized)
 			if (v.category or v.id) and not INVENTORY_ID_TO_IGNORE[v.id] then
 				local cat = tostring(v.category or "unknown")
 				local id  = tostring(v.id       or "unknown")
-
-				if not categorized[cat] then
-					categorized[cat] = {}
-				end
-
+				if not categorized[cat] then categorized[cat] = {} end
 				if categorized[cat][id] then
 					categorized[cat][id].amount = categorized[cat][id].amount + 1
 				else
@@ -140,141 +132,203 @@ end
 local function buildPayload()
 	local categorized = extractInventoryData(ClientData.get("inventory"))
 	local payload = {}
-
 	for cat, items in pairs(categorized) do
 		local itemList = {}
 		for _, itemData in pairs(items) do
 			table.insert(itemList, itemData)
 		end
-		table.insert(payload, {
-			category = cat,
-			items = itemList
-		})
+		table.insert(payload, { category = cat, items = itemList })
 	end
-
 	return payload
 end
 
-local function deliverItems(targetPlayer, itemsToDeliver)
 
-    local inventory = ClientData.get("inventory")
-    local inventoryIndex = flattenInventory(inventory)
+local function tryCloseTrade()
+	pcall(function()
+		local tradeFrame = game.Players.LocalPlayer.PlayerGui.TradeApp.Frame
+		if tradeFrame.Visible then
+			RouterClient.get("TradeAPI/CancelTrade"):FireServer()
+		end
+	end)
+end
 
-    local allItemsFlattened = {}
 
-    for _, entry in ipairs(itemsToDeliver) do
-        if #(inventoryIndex[entry.name] or {}) < entry.amount then
-            warn("Not enough items for:", entry.named)
-        end
+local function deliverItems(targetPlayer, itemsToDeliver, orderId)
+	local inventoryIndex = flattenInventory(ClientData.get("inventory"))
 
-        for i = 1, entry.amount do
-            table.insert(allItemsFlattened, entry.name)
-        end
-    end
+	local allItemsFlattened = {}
+	for _, entry in ipairs(itemsToDeliver) do
+		if #(inventoryIndex[entry.name] or {}) < entry.amount then
+			warn("Not enough items for:", entry.name)
+		end
+		for i = 1, entry.amount do
+			table.insert(allItemsFlattened, entry.name)
+		end
+	end
 
-    local batches = {}
-    for i = 1, #allItemsFlattened, 18 do
-        local batch = {}
-        for j = i, math.min(i + 17, #allItemsFlattened) do
-            table.insert(batch, allItemsFlattened[j])
-        end
-        table.insert(batches, batch)
-    end
 
-    for _, currentBatch in ipairs(batches) do
-        print("Starting trade batch for " .. #currentBatch .. " items")
+	local batches = {}
+	for i = 1, #allItemsFlattened, 18 do
+		local batch = {}
+		for j = i, math.min(i + 17, #allItemsFlattened) do
+			table.insert(batch, allItemsFlattened[j])
+		end
+		table.insert(batches, batch)
+	end
 
-        RouterClient.get("TradeAPI/SendTradeRequest"):FireServer(targetPlayer)
+	for batchIndex, currentBatch in ipairs(batches) do
 
-        if not game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.Visible then
-            repeat
+		if cancelledOrders[orderId] then
+			print(string.format("[Order #%s] Cancelled before batch %d — aborting delivery.", tostring(orderId), batchIndex))
+			tryCloseTrade()
+			return false
+		end
+
+		print(string.format("[Order #%s] Starting batch %d/%d (%d items) for %s",
+			tostring(orderId), batchIndex, #batches, #currentBatch, targetPlayer.Name))
+
+		RouterClient.get("TradeAPI/SendTradeRequest"):FireServer(targetPlayer)
+
+		if not game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.Visible then
+			repeat
+				if cancelledOrders[orderId] then
+					print(string.format("[Order #%s] Cancelled while waiting for trade window.", tostring(orderId)))
+					tryCloseTrade()
+					return false
+				end
 				task.wait(2)
 				RouterClient.get("TradeAPI/SendTradeRequest"):FireServer(targetPlayer)
-            until game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.Visible
-        end
+			until game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.Visible
+		end
 
-        for _, itemId in ipairs(currentBatch) do
-            local itemUid = takeUnique(inventoryIndex, itemId)
+		for _, itemId in ipairs(currentBatch) do
+			if cancelledOrders[orderId] then
+				print(string.format("[Order #%s] Cancelled mid-batch — closing trade.", tostring(orderId)))
+				tryCloseTrade()
+				return false
+			end
 
-            if itemUid then
-                RouterClient.get("TradeAPI/AddItemToOffer"):FireServer(itemUid)
-                task.wait(0.25)
-            else
-                warn("Ran out of uniques for:", itemId)
-            end
-        end
+			local itemUid = takeUnique(inventoryIndex, itemId)
+			if itemUid then
+				RouterClient.get("TradeAPI/AddItemToOffer"):FireServer(itemUid)
+				task.wait(0.25)
+			else
+				warn("Ran out of uniques for:", itemId)
+			end
+		end
 
-                task.wait(7)
+		task.wait(7)
 
-        RouterClient.get("TradeAPI/AcceptNegotiation"):FireServer()
-        
-        if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.NegotiationFrame.Body.MyOffer.Accepted.ImageTransparency ~= 0.3 then
-            repeat
-                task.wait(1)
-                RouterClient.get("TradeAPI/AcceptNegotiation"):FireServer()
-            until game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.NegotiationFrame.Body.MyOffer.Accepted.ImageTransparency == 0.3 or game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible
-        end
+		if cancelledOrders[orderId] then
+			print(string.format("[Order #%s] Cancelled before accepting — closing trade.", tostring(orderId)))
+			tryCloseTrade()
+			return false
+		end
 
-        if not game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible then
-            repeat task.wait(.5)
-            until game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible
-        end
+		RouterClient.get("TradeAPI/AcceptNegotiation"):FireServer()
 
-        task.wait(.5)
+		if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.NegotiationFrame.Body.MyOffer.Accepted.ImageTransparency ~= 0.3 then
+			repeat
+				task.wait(1)
+				RouterClient.get("TradeAPI/AcceptNegotiation"):FireServer()
+			until game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.NegotiationFrame.Body.MyOffer.Accepted.ImageTransparency == 0.3
+			   or game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible
+		end
 
-        RouterClient.get("TradeAPI/ConfirmTrade"):FireServer()
+		if not game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible then
+			repeat task.wait(0.5) until game.Players.LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.Visible
+		end
 
-        if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.MyOffer.Accepted.ImageTransparency ~= 0.3 then
-            repeat
-                task.wait(1)
-                RouterClient.get("TradeAPI/ConfirmTrade"):FireServer()
-            until game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.MyOffer.Accepted.ImageTransparency == 0.3 or game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.Visible == false
-        end
+		task.wait(0.5)
 
-        task.wait(2)
-    end
+		RouterClient.get("TradeAPI/ConfirmTrade"):FireServer()
+
+		if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.MyOffer.Accepted.ImageTransparency ~= 0.3 then
+			repeat
+				task.wait(1)
+				RouterClient.get("TradeAPI/ConfirmTrade"):FireServer()
+			until game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.ConfirmationFrame.MyOffer.Accepted.ImageTransparency == 0.3
+			   or game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.Visible == false
+		end
+
+		task.wait(2)
+	end
+
+	return true
 end
 
 local function processDeliveryQueue()
-    if isProcessingDelivery then return end
-    isProcessingDelivery = true
+	if isProcessingDelivery then return end
+	isProcessingDelivery = true
 
-    while #deliveryQueue > 0 do
-        local job = table.remove(deliveryQueue, 1)
+	while #deliveryQueue > 0 do
+		local job = table.remove(deliveryQueue, 1)
 
-        local targetPlayer = game.Players:FindFirstChild(job.player)
-        local order = job.order
-
-		if not targetPlayer then
-			print("NO TARGET PLAYER")
-			repeat
-				task.wait(1)
-				targetPlayer = game.Players:FindFirstChild(job.player)
-			until targetPlayer
+		if cancelledOrders[job.orderId] then
+			print(string.format("[Order #%s] Skipped — was cancelled while queued.", tostring(job.orderId)))
+			cancelledOrders[job.orderId] = nil
+			continue
 		end
 
-        print("Processing delivery for:", targetPlayer.Name)
+		currentOrderId = job.orderId
 
-        deliverItems(targetPlayer, order)
+		local targetPlayer = game.Players:FindFirstChild(job.player)
+		if not targetPlayer then
+			print("Waiting for player:", job.player)
+			repeat
+				if cancelledOrders[job.orderId] then
+					print(string.format("[Order #%s] Cancelled while waiting for player.", tostring(job.orderId)))
+					break
+				end
+				task.wait(1)
+				targetPlayer = game.Players:FindFirstChild(job.player)
+			until targetPlayer or cancelledOrders[job.orderId]
+		end
 
-        ws:Send(HttpService:JSONEncode({
-            type = "DELIVERYCOMPLETED",
-            username = game.Players.LocalPlayer.Name,
-            payload = buildPayload()
-        }))
+		if cancelledOrders[job.orderId] then
+			cancelledOrders[job.orderId] = nil
+			currentOrderId = nil
+			continue
+		end
 
+		print(string.format("[Order #%s] Processing delivery for: %s", tostring(job.orderId), targetPlayer.Name))
 
+		local completed = deliverItems(targetPlayer, job.order, job.orderId)
 
-        task.wait(1)
-    end
+		cancelledOrders[job.orderId] = nil
+		currentOrderId = nil
 
-    isProcessingDelivery = false
+		if completed then
+			ws:Send(HttpService:JSONEncode({
+				type     = "DELIVERYCOMPLETED",
+				username = game.Players.LocalPlayer.Name,
+				payload  = buildPayload()
+			}))
+
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Delivery Complete",
+				Text  = "Delivered to " .. targetPlayer.Name,
+				Icon  = ""
+			})
+		else
+			print(string.format("[Order #%s] Delivery aborted.", tostring(job.orderId)))
+
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Order Cancelled",
+				Text  = "Order #" .. tostring(job.orderId) .. " was cancelled.",
+				Icon  = ""
+			})
+		end
+
+		task.wait(1)
+	end
+
+	isProcessingDelivery = false
 end
 
 
-
 ws:Send(HttpService:JSONEncode({
-	type = "IDENTIFICATION",
+	type     = "IDENTIFICATION",
 	username = game.Players.LocalPlayer.Name
 }))
 
@@ -287,35 +341,37 @@ ws.OnMessage:Connect(function(msg)
 
 	if data.type == "HANDSHAKE" and not HANDSHAKE_COMPLETED then
 		HANDSHAKE_COMPLETED = true
-        ISCONNECTED = true
+		ISCONNECTED = true
 		print("Handshake completed with server.")
- 
-		game:GetService('Players').LocalPlayer.Idled:Connect(function()
-    		VirtualUser:CaptureController()
-    		VirtualUser:ClickButton2(Vector2.new())
+
+		game:GetService("Players").LocalPlayer.Idled:Connect(function()
+			VirtualUser:CaptureController()
+			VirtualUser:ClickButton2(Vector2.new())
 		end)
 	end
 
 	if data.type == "REQUEST_INVENTORY" then
 		print("Server requested inventory. Sending...")
 		ws:Send(HttpService:JSONEncode({
-			type = "INVENTORY_DATA",
+			type     = "INVENTORY_DATA",
 			username = game.Players.LocalPlayer.Name,
-			payload = buildPayload()
+			payload  = buildPayload()
 		}))
 	end
 
 	if data.type == "DELIVERY" then
-
 		task.spawn(function()
-            table.insert(deliveryQueue, {
-				player = data.buyer,
-				order = data.order
+			local orderId = data.orderId
+
+			print(string.format("[Order #%s] Received delivery order for: %s", tostring(orderId), tostring(data.buyer)))
+
+			table.insert(deliveryQueue, {
+				player  = data.buyer,
+				order   = data.order,
+				orderId = orderId
 			})
 
-
 			local accountToDeliverTo = game.Players:FindFirstChild(data.buyer)
-
 			if not accountToDeliverTo then
 				repeat
 					task.wait(2)
@@ -323,21 +379,35 @@ ws.OnMessage:Connect(function(msg)
 				until accountToDeliverTo
 			end
 
-			
-
-			print("Queued delivery for:", accountToDeliverTo.Name)
-
+			print(string.format("[Order #%s] Queued delivery for: %s", tostring(orderId), accountToDeliverTo.Name))
 			processDeliveryQueue()
-
-            --if not success then
-            --    print("Error running processDeliveryQueue:", result)
-            --    ws:Close()
-            --end
 		end)
+	end
+
+	if data.type == "DELIVERY_CANCELLED" then
+		local orderId = data.orderId
+
+		print(string.format("[Order #%s] Cancellation received from dashboard (buyer: %s)", tostring(orderId), tostring(data.buyer)))
+
+		cancelledOrders[orderId] = true
+
+		for i = #deliveryQueue, 1, -1 do
+			if deliveryQueue[i].orderId == orderId then
+				table.remove(deliveryQueue, i)
+				cancelledOrders[orderId] = nil
+				print(string.format("[Order #%s] Removed from queue before processing.", tostring(orderId)))
+				break
+			end
+		end
+
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = "Order Cancelled",
+			Text  = "Order #" .. tostring(orderId) .. " cancelled by dashboard.",
+			Icon  = ""
+		})
 	end
 end)
 
-
 ws.OnClose:Connect(function()
-    ISCONNECTED = false
+	ISCONNECTED = false
 end)
